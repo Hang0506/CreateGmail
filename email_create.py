@@ -6,14 +6,14 @@ from pathlib import Path
 from faker import Faker
 from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
 from datetime import datetime
-
+from proxies import PROXIES
 fake = Faker()
 
 # CONFIG
 #TEST_URL = "http://localhost:3000/signup"  # <-- đổi thành trang test của bạn
 TEST_URL = "https://accounts.google.com/SignUp"  # <-- đổi thành trang test của bạn
-WORKERS = 1               # số incognito contexts (cửa sổ ẩn danh)
-TABS_PER_WORKER = 1      # số tab (page) mỗi context
+WORKERS = 1              # số incognito contexts (cửa sổ ẩn danh)
+TABS_PER_WORKER = 3      # số tab (page) mỗi context
 MAX_CONCURRENT_TASKS = 12 # giới hạn concurrency
 TIMEOUT = 30000           # ms
 OUTPUT_CSV = Path("generated_accounts.csv")
@@ -193,7 +193,6 @@ async def main():
     sem = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
     async with async_playwright() as p:
-        # Sử dụng Chrome ở chế độ ẩn danh
         browser = await p.chromium.launch(
             headless=False,  # Đặt True nếu muốn chạy không hiển thị giao diện
             args=[
@@ -204,15 +203,23 @@ async def main():
 
         for w in range(WORKERS):
             for t in range(TABS_PER_WORKER):
-                # Tạo context ẩn danh cho mỗi worker
-                async def run_task(wid=w, tid=t):
+                # Lấy proxy từ danh sách
+                proxy = PROXIES[(w * TABS_PER_WORKER + t) % len(PROXIES)]
+
+                # Tạo context với proxy và thông tin xác thực
+                async def run_task(wid=w, tid=t, proxy=proxy):
                     async with sem:
-                        context = await browser.new_context()  # Tạo context ẩn danh
+                        context = await browser.new_context(
+                            proxy={"server": proxy["server"]},
+                            http_credentials={"username": proxy["username"], "password": proxy["password"]}
+                        )
                         page = await context.new_page()  # Tạo tab mới trong context
                         try:
                             return await worker_task(page, wid, tid)
                         finally:
                             await context.close()  # Đóng context sau khi hoàn thành
+
+                # Thêm tác vụ vào danh sách
                 tasks.append(asyncio.create_task(run_task()))
 
         # gather results
@@ -237,5 +244,33 @@ async def main():
         print("Trình duyệt đã được đóng.")
     print("Hoàn tất. Kết quả lưu ở", OUTPUT_CSV)
 
+async def test_proxy(proxy):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)  # headless=True để test nhanh hơn
+        try:
+            print(f"Đang kiểm tra proxy: {proxy['server']} với username: {proxy.get('username')} và password: {proxy.get('password')}")
+            context = await browser.new_context(
+                proxy={
+                    "server": proxy["server"],
+                    "username": proxy.get("username"),
+                    "password": proxy.get("password")
+                }
+            )
+            page = await context.new_page()
+            await page.goto("https://httpbin.org/ip", timeout=15000)  # timeout 15s
+            content = await page.text_content("pre")
+            print(f"[OK] Proxy {proxy['server']} hoạt động. IP hiển thị: {content}")
+        except Exception as e:
+            print(f"[FAIL] Proxy {proxy['server']} không hoạt động. Lỗi: {e}")
+        finally:
+            print(f"[FAIL] Proxy {proxy['server']} không hoạt động.")
+
+            #await browser.close()
+
+
 if __name__ == "__main__":
+    async def main():
+        for proxy in PROXIES:
+            await test_proxy(proxy)
+
     asyncio.run(main())

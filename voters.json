@@ -1,0 +1,21 @@
+[
+    {
+      "email": "alice@example.com",
+      "csrf_token": "abc123xyz",
+      "cookies": {
+        "XSRF-TOKEN": "cookie1",
+        "fptunder35_session": "session1"
+      },
+      "last_voted": "2025-08-06T09:00:00"
+    },
+    {
+      "email": "bob@example.com",
+      "csrf_token": "def456xyz",
+      "cookies": {
+        "XSRF-TOKEN": "cookie2",
+        "fptunder35_session": "session2"
+      },
+      "last_voted": "2025-08-06T03:30:00"
+    }
+  ]
+  
